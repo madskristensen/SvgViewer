@@ -3,13 +3,13 @@
     <Metadata>
         <Identity Id="SvgViewer.7a08d0d4-985c-4415-93d5-ddd9135d8f4f" Version="1.0" Language="en-US" Publisher="Mads Kristensen" />
         <DisplayName>SVG Viewer</DisplayName>
-        <Description xml:space="preserve">Adds a rendered view of SVG files and makes it easy to switch between code view and rendered view.Makes it </Des
+        <Description xml:space="preserve">Adds a rendered view of SVG files and makes it easy to switch between code view and rendered view.Makes it </Description>
         <MoreInfo>https://github.com/madskristensen/SvgViewer</MoreInfo>
         <License>Resources\LICENSE</License>
         <Icon>Resources\Icon.png</Icon>
         <PreviewImage>Resources\Icon.png</PreviewImage>
         <Tags>svg, xml</Tags>
-        <Preview>true</Preview>cription>
+        <Preview>true</Preview>
     </Metadata>
     <Installation>
         <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[16.0, 17.0)" />
