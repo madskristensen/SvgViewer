@@ -6,7 +6,11 @@ Download the extension from the [Visual Studio Marketplace](https://marketplace.
 
 --------------------------------------
 
-Description coming soon...
+Renders a preview of the SVG file being edited in the bottom right corner of the editor.
+
+![Adornment](art/adornment.png)
+
+The rendered image is updated every time the .svg document is being saved to disk.
 
 ## License
 [Apache 2.0](LICENSE)
