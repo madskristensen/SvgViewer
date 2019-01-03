@@ -1,4 +1,4 @@
-# VSCT file Intellisense
+# SVG Viewer
 
 [![Build status](https://ci.appveyor.com/api/projects/status/bxosxyyyrb7rgy65?svg=true)](https://ci.appveyor.com/project/madskristensen/svgviewer)
 
