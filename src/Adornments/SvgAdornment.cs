@@ -23,7 +23,7 @@ namespace SvgViewer
 
             _view = view;
             _view.Closed += OnTextviewClosed;
-            
+
             Visibility = Visibility.Hidden;
 
             IAdornmentLayer adornmentLayer = view.GetAdornmentLayer(AdornmentLayer.LayerName);
@@ -40,12 +40,29 @@ namespace SvgViewer
             };
 
             document.FileActionOccurred += OnDocumentSaved;
+            _view.TextBuffer.PostChanged += OnTextBufferChanged;
             GenerateImageAsync().ConfigureAwait(false);
+        }
+
+        private void OnTextBufferChanged(object sender, EventArgs e)
+        {
+            int lastVersion = _view.TextBuffer.CurrentSnapshot.Version.VersionNumber;
+
+            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            {
+                await Task.Delay(500);
+
+                if (_view.TextBuffer.CurrentSnapshot.Version.VersionNumber == lastVersion)
+                {
+                    await GenerateImageAsync();
+                }
+            });
         }
 
         private void OnTextviewClosed(object sender, EventArgs e)
         {
             _view.Closed -= OnTextviewClosed;
+            _view.TextBuffer.PostChanged -= OnTextBufferChanged;
             _view.ViewportHeightChanged -= SetAdornmentLocation;
             _view.ViewportWidthChanged -= SetAdornmentLocation;
             _document.FileActionOccurred -= OnDocumentSaved;

@@ -1,25 +1,25 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
-  <Metadata>
-    <Identity Id="SvgViewer.7a08d0d4-985c-4415-93d5-ddd9135d8f4f" Version="1.0" Language="en-US" Publisher="Mads Kristensen" />
-    <DisplayName>SVG Viewer</DisplayName>
-    <Description xml:space="preserve">Makes it much easier to work with SVG files by showing a preview in the bottom-right corner of the code window while editing.</Description>
-    <MoreInfo>https://github.com/madskristensen/SvgViewer</MoreInfo>
-    <License>Resources\LICENSE</License>
-    <Icon>Resources\Icon.png</Icon>
-    <PreviewImage>Resources\Icon.png</PreviewImage>
-    <Tags>svg, xml</Tags>
-    <Preview>true</Preview>
-  </Metadata>
-  <Installation>
-    <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[14.0, 17.0)" />
-  </Installation>
-  <Prerequisites>
-    <Prerequisite Id="Microsoft.VisualStudio.Component.CoreEditor" Version="[15.0,)" DisplayName="Visual Studio core editor" />
-  </Prerequisites>
-  <Assets>
-    <Asset Type="Microsoft.VisualStudio.VsPackage" d:Source="Project" d:ProjectName="%CurrentProject%" Path="|%CurrentProject%;PkgdefProjectOutputGroup|" />
-    <Asset Type="Microsoft.VisualStudio.MefComponent" d:Source="Project" d:ProjectName="%CurrentProject%" Path="|%CurrentProject%|" />
-    <Asset Type="Microsoft.VisualStudio.VsPackage" d:Source="File" Path="Registry.pkgdef" />
-  </Assets>
+    <Metadata>
+        <Identity Id="SvgViewer.7a08d0d4-985c-4415-93d5-ddd9135d8f4f" Version="1.0" Language="en-US" Publisher="Mads Kristensen" />
+        <DisplayName>SVG Viewer</DisplayName>
+        <Description xml:space="preserve">Makes it much easier to work with SVG files by showing a live preview in the bottom-right corner of the code window</Description>
+        <MoreInfo>https://github.com/madskristensen/SvgViewer</MoreInfo>
+        <License>Resources\LICENSE</License>
+        <Icon>Resources\Icon.png</Icon>
+        <PreviewImage>Resources\Icon.png</PreviewImage>
+        <Tags>svg, xml</Tags>
+        <Preview>true</Preview>
+    </Metadata>
+    <Installation>
+        <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[14.0, 17.0)" />
+    </Installation>
+    <Prerequisites>
+        <Prerequisite Id="Microsoft.VisualStudio.Component.CoreEditor" Version="[15.0,)" DisplayName="Visual Studio core editor" />
+    </Prerequisites>
+    <Assets>
+        <Asset Type="Microsoft.VisualStudio.VsPackage" d:Source="Project" d:ProjectName="%CurrentProject%" Path="|%CurrentProject%;PkgdefProjectOutputGroup|" />
+        <Asset Type="Microsoft.VisualStudio.MefComponent" d:Source="Project" d:ProjectName="%CurrentProject%" Path="|%CurrentProject%|" />
+        <Asset Type="Microsoft.VisualStudio.VsPackage" d:Source="File" Path="Registry.pkgdef" />
+    </Assets>
 </PackageManifest>

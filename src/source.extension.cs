@@ -9,7 +9,7 @@ namespace SvgViewer
     {
         public const string Id = "SvgViewer.7a08d0d4-985c-4415-93d5-ddd9135d8f4f";
         public const string Name = "SVG Viewer";
-        public const string Description = @"Makes it much easier to work with SVG files by showing a preview in the bottom-right corner of the code window while editing.";
+        public const string Description = @"Makes it much easier to work with SVG files by showing a live preview in the bottom-right corner of the code window";
         public const string Language = "en-US";
         public const string Version = "1.0";
         public const string Author = "Mads Kristensen";

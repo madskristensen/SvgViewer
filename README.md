@@ -10,7 +10,7 @@ Renders a preview of the SVG file being edited in the bottom right corner of the
 
 ![Adornment](art/adornment.png)
 
-The rendered image is updated every time the .svg document is being saved to disk.
+The rendered image is updated live while typing to provide instant feedback on changes made to the document.
 
 ## License
 [Apache 2.0](LICENSE)
