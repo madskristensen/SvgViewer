@@ -1,11 +1,14 @@
 ﻿using System;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
+using System.Xml;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Editor;
+using Microsoft.VisualStudio.Threading;
 using Svg;
 using Task = System.Threading.Tasks.Task;
 
@@ -20,9 +23,7 @@ namespace SvgViewer
         public SvgAdornment(IWpfTextView view, ITextDocument document)
         {
             _document = document;
-
             _view = view;
-            _view.Closed += OnTextviewClosed;
 
             Visibility = Visibility.Hidden;
 
@@ -30,17 +31,13 @@ namespace SvgViewer
 
             if (adornmentLayer.IsEmpty)
                 adornmentLayer.AddAdornment(AdornmentPositioningBehavior.ViewportRelative, null, null, this, null);
-
-            base.Loaded += (s, e) =>
-            {
-                SetAdornmentLocation(_view, EventArgs.Empty);
-
-                _view.ViewportHeightChanged += SetAdornmentLocation;
-                _view.ViewportWidthChanged += SetAdornmentLocation;
-            };
-
-            document.FileActionOccurred += OnDocumentSaved;
+            
             _view.TextBuffer.PostChanged += OnTextBufferChanged;
+            _view.Closed += OnTextviewClosed;
+            _view.ViewportHeightChanged += SetAdornmentLocation;
+            _view.ViewportWidthChanged += SetAdornmentLocation;
+            _document.FileActionOccurred += OnDocumentSaved;
+
             GenerateImageAsync().ConfigureAwait(false);
         }
 
@@ -54,7 +51,7 @@ namespace SvgViewer
 
                 if (_view.TextBuffer.CurrentSnapshot.Version.VersionNumber == lastVersion)
                 {
-                    await GenerateImageAsync();
+                    await GenerateImageAsync().ConfigureAwait(false);
                 }
             });
         }
@@ -75,12 +72,17 @@ namespace SvgViewer
 
         private async Task GenerateImageAsync()
         {
-            string xml = _view.TextBuffer.CurrentSnapshot.GetText();
-            var svg = SvgDocument.FromSvg<SvgDocument>(xml);
+            await TaskScheduler.Default;
 
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-            var bitmap = new BitmapImage();
+            if (!TryGetBufferAsXmlDocument(out XmlDocument xml))
+            {
+                Source = null;
+                return;
+            }
+
+            var svg = SvgDocument.Open(xml);
             Size size = CalculateDimensions(new Size(svg.Width.Value, svg.Height.Value), _maxSize, _maxSize);
+            var bitmap = new BitmapImage();
 
             using (System.Drawing.Bitmap bmp = svg.Draw((int)size.Width, (int)size.Height))
             {
@@ -96,8 +98,30 @@ namespace SvgViewer
                 }
             }
 
+            bitmap.Freeze();
+
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
             ToolTip = $"Width: {svg.Width}\nHeight: {svg.Height}";
             Source = bitmap;
+            UpdateAdornmentLocation(bitmap.Width, bitmap.Height);
+        }
+
+        private bool TryGetBufferAsXmlDocument(out XmlDocument document)
+        {
+            document = new XmlDocument();
+
+            try
+            {
+                string xml = _view.TextBuffer.CurrentSnapshot.GetText();
+                document.LoadXml(xml);
+
+                return true;
+            }
+            catch (XmlException)
+            {
+                return false;
+            }
         }
 
         private static Size CalculateDimensions(Size currentSize, double maxWidth, double maxHeight)
@@ -120,9 +144,13 @@ namespace SvgViewer
 
         private void SetAdornmentLocation(object sender, EventArgs e)
         {
-            var view = (IWpfTextView)sender;
-            Canvas.SetLeft(this, view.ViewportRight - ActualWidth - 20);
-            Canvas.SetTop(this, view.ViewportBottom - ActualHeight - 20);
+            UpdateAdornmentLocation(ActualWidth, ActualHeight);
+        }
+
+        private void UpdateAdornmentLocation(double width, double height)
+        {
+            Canvas.SetLeft(this, _view.ViewportRight - width - 20);
+            Canvas.SetTop(this, _view.ViewportBottom - height - 20);
             Visibility = Visibility.Visible;
         }
 
