@@ -17,12 +17,10 @@ namespace SvgViewer
     class SvgAdornment : Image
     {
         private readonly ITextView _view;
-        private readonly ITextDocument _document;
         private const int _maxSize = 250;
 
-        public SvgAdornment(IWpfTextView view, ITextDocument document)
+        public SvgAdornment(IWpfTextView view)
         {
-            _document = document;
             _view = view;
 
             Visibility = Visibility.Hidden;
@@ -36,7 +34,6 @@ namespace SvgViewer
             _view.Closed += OnTextviewClosed;
             _view.ViewportHeightChanged += SetAdornmentLocation;
             _view.ViewportWidthChanged += SetAdornmentLocation;
-            _document.FileActionOccurred += OnDocumentSaved;
 
             GenerateImageAsync().ConfigureAwait(false);
         }
@@ -62,7 +59,6 @@ namespace SvgViewer
             _view.TextBuffer.PostChanged -= OnTextBufferChanged;
             _view.ViewportHeightChanged -= SetAdornmentLocation;
             _view.ViewportWidthChanged -= SetAdornmentLocation;
-            _document.FileActionOccurred -= OnDocumentSaved;
         }
 
         private void OnDocumentSaved(object sender, TextDocumentFileActionEventArgs e)

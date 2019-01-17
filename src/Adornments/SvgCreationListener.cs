@@ -11,12 +11,10 @@ namespace SvgViewer
     [Export(typeof(IWpfTextViewCreationListener))]
     [ContentType("htmlx")]
     [ContentType("xml")]
+    [ContentType("svg")]
     [TextViewRole(PredefinedTextViewRoles.PrimaryDocument)]
     internal sealed class SvgAdornmentProvider : IWpfTextViewCreationListener
     {
-        [Import]
-        private ITextDocumentFactoryService DocumentService { get; set; }
-
         public void TextViewCreated(IWpfTextView textView)
         {
             CreateAdornmentAsync(textView).ConfigureAwait(false);
@@ -28,17 +26,7 @@ namespace SvgViewer
 
             try
             {
-                if (!DocumentService.TryGetTextDocument(textView.TextBuffer, out ITextDocument doc))
-                {
-                    return;
-                }
-
-                if (!doc.FilePath.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
-                {
-                    return;
-                }
-
-                textView.Properties.GetOrCreateSingletonProperty(() => new SvgAdornment(textView, doc));
+                textView.Properties.GetOrCreateSingletonProperty(() => new SvgAdornment(textView));
             }
             catch (Exception ex)
             {

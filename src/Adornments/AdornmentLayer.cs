@@ -10,7 +10,7 @@ namespace SvgViewer
 
         [Export(typeof(AdornmentLayerDefinition))]
         [Name(LayerName)]
-        [Order(Before = PredefinedAdornmentLayers.Caret)]
+        [Order(After = PredefinedAdornmentLayers.Text)]
         public AdornmentLayerDefinition editorAdornmentLayer = null;
     }
 }
