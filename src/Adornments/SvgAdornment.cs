@@ -14,7 +14,7 @@ using Task = System.Threading.Tasks.Task;
 
 namespace SvgViewer
 {
-    class SvgAdornment : Image
+    internal class SvgAdornment : Image
     {
         private readonly ITextView _view;
         private const int _maxSize = 250;
@@ -28,19 +28,21 @@ namespace SvgViewer
             IAdornmentLayer adornmentLayer = view.GetAdornmentLayer(AdornmentLayer.LayerName);
 
             if (adornmentLayer.IsEmpty)
+            {
                 adornmentLayer.AddAdornment(AdornmentPositioningBehavior.ViewportRelative, null, null, this, null);
-            
+            }
+
             _view.TextBuffer.PostChanged += OnTextBufferChanged;
             _view.Closed += OnTextviewClosed;
             _view.ViewportHeightChanged += SetAdornmentLocation;
             _view.ViewportWidthChanged += SetAdornmentLocation;
 
-            GenerateImageAsync().ConfigureAwait(false);
+            GenerateImageAsync().ForgetAndLogOnFailure();
         }
 
         private void OnTextBufferChanged(object sender, EventArgs e)
         {
-            int lastVersion = _view.TextBuffer.CurrentSnapshot.Version.VersionNumber;
+            var lastVersion = _view.TextBuffer.CurrentSnapshot.Version.VersionNumber;
 
             ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
@@ -48,7 +50,7 @@ namespace SvgViewer
 
                 if (_view.TextBuffer.CurrentSnapshot.Version.VersionNumber == lastVersion)
                 {
-                    await GenerateImageAsync().ConfigureAwait(false);
+                    await GenerateImageAsync();
                 }
             });
         }
@@ -63,7 +65,7 @@ namespace SvgViewer
 
         private void OnDocumentSaved(object sender, TextDocumentFileActionEventArgs e)
         {
-            GenerateImageAsync().ConfigureAwait(false);
+            GenerateImageAsync().ForgetAndLogOnFailure();
         }
 
         private async Task GenerateImageAsync()
@@ -76,31 +78,45 @@ namespace SvgViewer
                 return;
             }
 
-            var svg = SvgDocument.Open(xml);
-            Size size = CalculateDimensions(new Size(svg.Width.Value, svg.Height.Value), _maxSize, _maxSize);
-            var bitmap = new BitmapImage();
-
-            using (System.Drawing.Bitmap bmp = svg.Draw((int)size.Width, (int)size.Height))
+            try
             {
-                using (var ms = new MemoryStream())
+                var svg = SvgDocument.Open(xml);
+
+                if (svg == null)
                 {
-                    bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
-                    ms.Position = 0;
-
-                    bitmap.BeginInit();
-                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmap.StreamSource = ms;
-                    bitmap.EndInit();
+                    return;
                 }
+
+                Size size = CalculateDimensions(new Size(svg.Width.Value, svg.Height.Value));
+                var bitmap = new BitmapImage();
+
+                using (System.Drawing.Bitmap bmp = svg.Draw(250, 250))
+                {
+                    using (var ms = new MemoryStream())
+                    {
+                        bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+                        ms.Position = 0;
+
+                        bitmap.BeginInit();
+                        bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                        bitmap.StreamSource = ms;
+                        bitmap.EndInit();
+                    }
+                }
+
+
+                bitmap.Freeze();
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+                ToolTip = $"Width: {svg.Width}\nHeight: {svg.Height}";
+                Source = bitmap;
+                UpdateAdornmentLocation(bitmap.Width, bitmap.Height);
             }
-
-            bitmap.Freeze();
-
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-
-            ToolTip = $"Width: {svg.Width}\nHeight: {svg.Height}";
-            Source = bitmap;
-            UpdateAdornmentLocation(bitmap.Width, bitmap.Height);
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.Write(ex);
+            }
         }
 
         private bool TryGetBufferAsXmlDocument(out XmlDocument document)
@@ -109,7 +125,7 @@ namespace SvgViewer
 
             try
             {
-                string xml = _view.TextBuffer.CurrentSnapshot.GetText();
+                var xml = _view.TextBuffer.CurrentSnapshot.GetText();
                 document.LoadXml(xml);
 
                 return true;
@@ -120,20 +136,20 @@ namespace SvgViewer
             }
         }
 
-        private static Size CalculateDimensions(Size currentSize, double maxWidth, double maxHeight)
+        private static Size CalculateDimensions(Size currentSize)
         {
-            double sourceWidth = currentSize.Width;
-            double sourceHeight = currentSize.Height;
+            var sourceWidth = currentSize.Width;
+            var sourceHeight = currentSize.Height;
 
-            double widthPercent = maxWidth / sourceWidth;
-            double heightPercent = maxHeight / sourceHeight;
+            var widthPercent = _maxSize / sourceWidth;
+            var heightPercent = _maxSize / sourceHeight;
 
-            double percent = heightPercent < widthPercent
+            var percent = heightPercent < widthPercent
                            ? heightPercent
                            : widthPercent;
 
-            int destWidth = (int)(sourceWidth * percent);
-            int destHeight = (int)(sourceHeight * percent);
+            var destWidth = (int)(sourceWidth * percent);
+            var destHeight = (int)(sourceHeight * percent);
 
             return new Size(destWidth, destHeight);
         }
