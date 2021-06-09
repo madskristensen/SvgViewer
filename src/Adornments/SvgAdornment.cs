@@ -37,7 +37,7 @@ namespace SvgViewer
             _view.ViewportHeightChanged += SetAdornmentLocation;
             _view.ViewportWidthChanged += SetAdornmentLocation;
 
-            GenerateImageAsync().ForgetAndLogOnFailure();
+            GenerateImageAsync().FireAndForget();
         }
 
         private void OnTextBufferChanged(object sender, EventArgs e)
@@ -65,7 +65,7 @@ namespace SvgViewer
 
         private void OnDocumentSaved(object sender, TextDocumentFileActionEventArgs e)
         {
-            GenerateImageAsync().ForgetAndLogOnFailure();
+            GenerateImageAsync().FireAndForget();
         }
 
         private async Task GenerateImageAsync()
