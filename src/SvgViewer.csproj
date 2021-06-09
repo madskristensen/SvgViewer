@@ -88,6 +88,11 @@
     <PackageReference Include="Community.VisualStudio.Toolkit">
       <Version>15.0.75.103</Version>
     </PackageReference>
+    <PackageReference Include="Microsoft.VSSDK.BuildTools">
+      <Version>17.0.1619-preview1</Version>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="Svg">
       <Version>3.2.3</Version>
     </PackageReference>
