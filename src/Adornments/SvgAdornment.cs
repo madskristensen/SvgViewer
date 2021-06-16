@@ -72,14 +72,14 @@ namespace SvgViewer
         {
             await TaskScheduler.Default;
 
-            if (!TryGetBufferAsXmlDocument(out XmlDocument xml))
-            {
-                Source = null;
-                return;
-            }
-
             try
             {
+                if (!TryGetBufferAsXmlDocument(out XmlDocument xml))
+                {
+                    Source = null;
+                    return;
+                }
+
                 var svg = SvgDocument.Open(xml);
 
                 if (svg == null)
