@@ -10,6 +10,7 @@ namespace SvgViewer
 {
     [Export(typeof(IWpfTextViewCreationListener))]
     [ContentType(ContentTypes.HTML)]
+    [ContentType(ContentTypes.WebForms)]
     [ContentType(ContentTypes.Xml)]
     [ContentType("svg")]
     [TextViewRole(PredefinedTextViewRoles.PrimaryDocument)]
