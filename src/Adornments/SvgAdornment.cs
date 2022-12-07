@@ -5,19 +5,27 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 using System.Xml;
+
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Editor;
 using Microsoft.VisualStudio.Threading;
+
 using Svg;
+
 using Task = System.Threading.Tasks.Task;
 
 namespace SvgViewer
 {
+    internal enum ScalingMode
+    {
+        ScaleDown,
+        ScaleUp,
+    }
+
     internal class SvgAdornment : Image
     {
         private readonly ITextView _view;
-        private const int _maxSize = 250;
 
         public SvgAdornment(IWpfTextView view)
         {
@@ -33,7 +41,7 @@ namespace SvgViewer
             }
 
             _view.TextBuffer.PostChanged += OnTextBufferChanged;
-            _view.Closed += OnTextviewClosed;
+            _view.Closed += OnTextViewClosed;
             _view.ViewportHeightChanged += SetAdornmentLocation;
             _view.ViewportWidthChanged += SetAdornmentLocation;
 
@@ -44,7 +52,7 @@ namespace SvgViewer
         {
             var lastVersion = _view.TextBuffer.CurrentSnapshot.Version.VersionNumber;
 
-            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
                 await Task.Delay(500);
 
@@ -55,9 +63,9 @@ namespace SvgViewer
             });
         }
 
-        private void OnTextviewClosed(object sender, EventArgs e)
+        private void OnTextViewClosed(object sender, EventArgs e)
         {
-            _view.Closed -= OnTextviewClosed;
+            _view.Closed -= OnTextViewClosed;
             _view.TextBuffer.PostChanged -= OnTextBufferChanged;
             _view.ViewportHeightChanged -= SetAdornmentLocation;
             _view.ViewportWidthChanged -= SetAdornmentLocation;
@@ -67,6 +75,18 @@ namespace SvgViewer
         {
             GenerateImageAsync().FireAndForget();
         }
+
+        /// <summary>
+        /// Length of the preview side that's being scaled to.
+        /// If <see cref="ScalingMode"/> is ScaleUp, that's the minimal side length.
+        /// If <see cref="ScalingMode"/> is ScaleDown, that's the maximal side length.
+        /// </summary>
+        public int PreviewSideLength { get; set; } = 250;
+
+        /// <summary>
+        /// Scale the image up or down?
+        /// </summary>
+        public ScalingMode ScalingMode { get; set; } = ScalingMode.ScaleUp;
 
         private async Task GenerateImageAsync()
         {
@@ -88,9 +108,10 @@ namespace SvgViewer
                 }
 
                 Size size = CalculateDimensions(new Size(svg.Width.Value, svg.Height.Value));
+
                 var bitmap = new BitmapImage();
 
-                using (System.Drawing.Bitmap bmp = svg.Draw(250, 250))
+                using (System.Drawing.Bitmap bmp = svg.Draw((int)size.Width, (int)size.Height))
                 {
                     using (var ms = new MemoryStream())
                     {
@@ -136,17 +157,17 @@ namespace SvgViewer
             }
         }
 
-        private static Size CalculateDimensions(Size currentSize)
+        private Size CalculateDimensions(Size currentSize)
         {
             var sourceWidth = currentSize.Width;
             var sourceHeight = currentSize.Height;
 
-            var widthPercent = _maxSize / sourceWidth;
-            var heightPercent = _maxSize / sourceHeight;
+            var widthPercent = PreviewSideLength / sourceWidth;
+            var heightPercent = PreviewSideLength / sourceHeight;
 
-            var percent = heightPercent < widthPercent
-                           ? heightPercent
-                           : widthPercent;
+            var percent = ScalingMode == ScalingMode.ScaleUp ?
+                Math.Max(heightPercent, widthPercent) :
+                Math.Min(heightPercent, widthPercent);
 
             var destWidth = (int)(sourceWidth * percent);
             var destHeight = (int)(sourceHeight * percent);
