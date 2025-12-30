@@ -46,6 +46,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Adornments\AdornmentLayer.cs" />
+    <Compile Include="Adornments\SvgAdornment.cs" />
     <Compile Include="Adornments\SvgCreationListener.cs" />
     <Compile Include="Constants.cs" />
     <Compile Include="Debouncer.cs" />
@@ -58,7 +59,6 @@
       <DesignTime>True</DesignTime>
       <DependentUpon>source.extension.vsixmanifest</DependentUpon>
     </Compile>
-    <Compile Include="Adornments\SvgAdornment.cs" />
     <Compile Include="SvgViewerPackage.cs" />
   </ItemGroup>
   <ItemGroup>

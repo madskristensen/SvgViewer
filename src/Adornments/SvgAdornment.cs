@@ -1,10 +1,9 @@
 using System;
 using System.IO;
-using System.Security.Cryptography;
-using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Xml;
@@ -24,6 +23,9 @@ namespace SvgViewer
     /// </summary>
     internal sealed class SvgAdornment : Image
     {
+        // Cached error indicator bitmap (shared across all instances)
+        private static readonly Lazy<BitmapSource> _cachedErrorIndicator = new Lazy<BitmapSource>(CreateErrorIndicatorBitmap);
+
         private readonly ITextView _view;
         private readonly Debouncer _debouncer = new Debouncer();
         private readonly Debouncer _viewportDebouncer;
@@ -41,12 +43,24 @@ namespace SvgViewer
         private string _lastError;
         private bool _isLoading;
 
+        // Zoom state
+        private double _zoomFactor = 1.0;
+        private const double _minZoom = 0.5;
+        private const double _maxZoom = 4.0;
+        private const double _zoomStep = 0.25;
+
+        // Store original bitmap for zoom operations
+        private BitmapSource _currentBitmap;
+        private string _currentSvgWidth;
+        private string _currentSvgHeight;
+
         public SvgAdornment(IWpfTextView view)
         {
             _view = view;
             _viewportDebouncer = new Debouncer(useDispatcher: true);
 
             Visibility = Visibility.Hidden;
+            Cursor = Cursors.Hand;
 
             IAdornmentLayer adornmentLayer = view.GetAdornmentLayer(AdornmentLayer.LayerName);
 
@@ -60,6 +74,15 @@ namespace SvgViewer
             _view.ViewportHeightChanged += OnViewportChanged;
             _view.ViewportWidthChanged += OnViewportChanged;
 
+            // Subscribe to mouse events for click-to-copy and zoom
+            MouseLeftButtonUp += OnMouseLeftButtonUp;
+            MouseWheel += OnMouseWheel;
+            MouseEnter += OnMouseEnter;
+            MouseLeave += OnMouseLeave;
+
+            // Subscribe to options changes
+            GeneralOptions.OptionsChanged += OnOptionsChanged;
+
             GenerateImageAsync().FireAndForget();
         }
 
@@ -67,7 +90,7 @@ namespace SvgViewer
 
         private void OnTextBufferChanged(object sender, EventArgs e)
         {
-            var debounceDelay = Options?.DebounceDelay ?? Constants.DefaultDebounceDelay;
+            int debounceDelay = Options?.DebounceDelay ?? Constants.DefaultDebounceDelay;
 
             _debouncer.Debounce(() =>
             {
@@ -81,6 +104,13 @@ namespace SvgViewer
             _view.TextBuffer.PostChanged -= OnTextBufferChanged;
             _view.ViewportHeightChanged -= OnViewportChanged;
             _view.ViewportWidthChanged -= OnViewportChanged;
+
+            MouseLeftButtonUp -= OnMouseLeftButtonUp;
+            MouseWheel -= OnMouseWheel;
+            MouseEnter -= OnMouseEnter;
+            MouseLeave -= OnMouseLeave;
+
+            GeneralOptions.OptionsChanged -= OnOptionsChanged;
 
             _debouncer.Dispose();
             _viewportDebouncer.Dispose();
@@ -96,10 +126,151 @@ namespace SvgViewer
             }, Constants.ViewportDebounceDelay);
         }
 
+        private void OnOptionsChanged(object sender, OptionsChangedEventArgs e)
+        {
+            // Re-render on size change, reposition on position/margin change
+            switch (e.PropertyName)
+            {
+                case nameof(GeneralOptions.PreviewSize):
+                    // Clear cache to force re-render at new size
+                    _lastContentHash = null;
+                    GenerateImageAsync().FireAndForget();
+                    break;
+
+                case nameof(GeneralOptions.PreviewPosition):
+                case nameof(GeneralOptions.PreviewMargin):
+                    // Just reposition, no re-render needed
+                    ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+                    {
+                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                        UpdateAdornmentLocation(ActualWidth, ActualHeight);
+                    }).FireAndForget();
+                    break;
+
+                case nameof(GeneralOptions.ShowErrorIndicator):
+                    // Re-apply current state
+                    if (_lastError != null)
+                    {
+                        GenerateImageAsync().FireAndForget();
+                    }
+                    break;
+            }
+        }
+
+        private void OnMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            // Copy rendered image to clipboard
+            if (_currentBitmap != null && Source != null)
+            {
+                try
+                {
+                    Clipboard.SetImage(_currentBitmap);
+
+                    // Visual feedback - brief opacity flash
+                    Opacity = 0.3;
+                    Task.Delay(100).ContinueWith(_ =>
+                    {
+                        ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+                        {
+                            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                            if (!_isLoading)
+                            {
+                                Opacity = 1.0;
+                            }
+                        }).FireAndForget();
+                    });
+
+                    // Update tooltip briefly to show success
+                    ToolTip = "Copied to clipboard!";
+                    Task.Delay(1500).ContinueWith(_ =>
+                    {
+                        ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+                        {
+                            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                            UpdateTooltip();
+                        }).FireAndForget();
+                    });
+                }
+                catch
+                {
+                    // Clipboard access can fail - ignore
+                }
+            }
+
+            e.Handled = true;
+        }
+
+        private void OnMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (_currentBitmap == null)
+            {
+                return;
+            }
+
+            // Zoom in/out based on wheel direction
+            if (e.Delta > 0)
+            {
+                _zoomFactor = System.Math.Min(_maxZoom, _zoomFactor + _zoomStep);
+            }
+            else
+            {
+                _zoomFactor = System.Math.Max(_minZoom, _zoomFactor - _zoomStep);
+            }
+
+            ApplyZoom();
+            e.Handled = true;
+        }
+
+        private void OnMouseEnter(object sender, MouseEventArgs e)
+        {
+            // Show zoom hint in tooltip
+            UpdateTooltip();
+        }
+
+        private void OnMouseLeave(object sender, MouseEventArgs e)
+        {
+            // Reset zoom when mouse leaves
+            if (_zoomFactor != 1.0)
+            {
+                _zoomFactor = 1.0;
+                ApplyZoom();
+            }
+        }
+
+        private void ApplyZoom()
+        {
+            if (_currentBitmap == null)
+            {
+                return;
+            }
+
+            double zoomedWidth = _currentBitmap.Width * _zoomFactor;
+            double zoomedHeight = _currentBitmap.Height * _zoomFactor;
+
+            Width = zoomedWidth;
+            Height = zoomedHeight;
+
+            UpdateAdornmentLocation(zoomedWidth, zoomedHeight);
+            UpdateTooltip();
+        }
+
+        private void UpdateTooltip()
+        {
+            if (_lastError != null)
+            {
+                ToolTip = $"SVG Error:\n{_lastError}";
+            }
+            else if (_currentSvgWidth != null && _currentSvgHeight != null)
+            {
+                string zoomInfo = _zoomFactor != 1.0 ? $"\nZoom: {_zoomFactor:P0}" : "";
+                ToolTip = $"Width: {_currentSvgWidth}\nHeight: {_currentSvgHeight}{zoomInfo}\n\nClick to copy • Scroll to zoom";
+            }
+        }
+
         private async Task GenerateImageAsync()
         {
             // Show loading indicator if enabled
-            var showLoading = Options?.ShowLoadingIndicator ?? true;
+            bool showLoading = Options?.ShowLoadingIndicator ?? true;
             if (showLoading && !_isLoading)
             {
                 _isLoading = true;
@@ -121,7 +292,7 @@ namespace SvgViewer
         {
             try
             {
-                var xmlContent = _view.TextBuffer.CurrentSnapshot.GetText();
+                string xmlContent = _view.TextBuffer.CurrentSnapshot.GetText();
 
                 // Quick validation before expensive parsing
                 if (!LooksLikeSvg(xmlContent))
@@ -130,8 +301,8 @@ namespace SvgViewer
                 }
 
                 // Check content hash to avoid re-rendering identical content
-                var contentHash = ComputeHash(xmlContent);
-                var previewSize = Options?.PreviewSize ?? Constants.DefaultPreviewSize;
+                string contentHash = ComputeHash(xmlContent);
+                int previewSize = Options?.PreviewSize ?? Constants.DefaultPreviewSize;
 
                 if (contentHash == _lastContentHash && previewSize == _lastPreviewSize)
                 {
@@ -139,7 +310,7 @@ namespace SvgViewer
                 }
 
                 // Parse XML
-                if (!TryParseXml(xmlContent, out XmlDocument xml, out var parseError))
+                if (!TryParseXml(xmlContent, out XmlDocument xml, out string parseError))
                 {
                     return RenderResult.Error(parseError);
                 }
@@ -230,14 +401,25 @@ namespace SvgViewer
             switch (result.State)
             {
                 case RenderState.Success:
-                    ToolTip = $"Width: {result.SvgWidth}\nHeight: {result.SvgHeight}";
+                    _currentBitmap = result.Bitmap;
+                    _currentSvgWidth = result.SvgWidth;
+                    _currentSvgHeight = result.SvgHeight;
+                    _zoomFactor = 1.0; // Reset zoom on new render
+
                     Source = result.Bitmap;
+                    Width = result.Bitmap.Width;
+                    Height = result.Bitmap.Height;
                     Opacity = 1.0;
+                    UpdateTooltip();
                     UpdateAdornmentLocation(result.Bitmap.Width, result.Bitmap.Height);
                     break;
 
                 case RenderState.Error:
-                    var showError = Options?.ShowErrorIndicator ?? true;
+                    _currentBitmap = null;
+                    _currentSvgWidth = null;
+                    _currentSvgHeight = null;
+
+                    bool showError = Options?.ShowErrorIndicator ?? true;
                     if (showError)
                     {
                         ShowErrorState(result.ErrorMessage);
@@ -250,6 +432,9 @@ namespace SvgViewer
                     break;
 
                 case RenderState.Empty:
+                    _currentBitmap = null;
+                    _currentSvgWidth = null;
+                    _currentSvgHeight = null;
                     Source = null;
                     Visibility = Visibility.Hidden;
                     break;
@@ -277,34 +462,45 @@ namespace SvgViewer
 
         private void ShowErrorState(string errorMessage)
         {
+            _lastError = errorMessage;
             ToolTip = $"SVG Error:\n{errorMessage}";
 
-            // Create a simple error indicator
-            BitmapSource errorBitmap = CreateErrorIndicator();
+            // Use cached error indicator
+            BitmapSource errorBitmap = _cachedErrorIndicator.Value;
             Source = errorBitmap;
+            Width = errorBitmap.Width;
+            Height = errorBitmap.Height;
             Opacity = 0.8;
             UpdateAdornmentLocation(errorBitmap.Width, errorBitmap.Height);
         }
 
-        private BitmapSource CreateErrorIndicator()
+        private static BitmapSource CreateErrorIndicatorBitmap()
         {
-            var size = 48;
+            int size = 48;
             var visual = new DrawingVisual();
 
             using (DrawingContext context = visual.RenderOpen())
             {
                 // Red circle background
+                var backgroundBrush = new SolidColorBrush(Color.FromArgb(200, 220, 53, 69));
+                backgroundBrush.Freeze();
+
+                var borderPen = new Pen(Brushes.DarkRed, 2);
+                borderPen.Freeze();
+
                 context.DrawEllipse(
-                    new SolidColorBrush(Color.FromArgb(200, 220, 53, 69)),
-                    new Pen(Brushes.DarkRed, 2),
+                    backgroundBrush,
+                    borderPen,
                     new Point(size / 2, size / 2),
                     size / 2 - 2,
                     size / 2 - 2);
 
                 // White X
-                var pen = new Pen(Brushes.White, 3) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
-                context.DrawLine(pen, new Point(14, 14), new Point(34, 34));
-                context.DrawLine(pen, new Point(34, 14), new Point(14, 34));
+                var xPen = new Pen(Brushes.White, 3) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+                xPen.Freeze();
+
+                context.DrawLine(xPen, new Point(14, 14), new Point(34, 34));
+                context.DrawLine(xPen, new Point(34, 14), new Point(14, 34));
             }
 
             var bitmap = new RenderTargetBitmap(size, size, 96, 96, PixelFormats.Pbgra32);
@@ -322,7 +518,7 @@ namespace SvgViewer
             }
 
             // Find first non-whitespace character position
-            var start = 0;
+            int start = 0;
             while (start < content.Length && char.IsWhiteSpace(content[start]))
             {
                 start++;
@@ -366,11 +562,10 @@ namespace SvgViewer
 
         private static string ComputeHash(string content)
         {
-            using (var sha = SHA256.Create())
-            {
-                var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(content));
-                return Convert.ToBase64String(hash);
-            }
+            // Use simple hash for change detection (not security)
+            // Combine hash code with length for better collision resistance
+            int hash = content.GetHashCode();
+            return $"{hash:X8}-{content.Length}";
         }
 
         private Size CalculateDimensions(Size currentSize, int previewSize)
@@ -384,8 +579,8 @@ namespace SvgViewer
                 return _lastCalculatedSize.Value;
             }
 
-            var sourceWidth = currentSize.Width;
-            var sourceHeight = currentSize.Height;
+            double sourceWidth = currentSize.Width;
+            double sourceHeight = currentSize.Height;
 
             // Handle edge cases
             if (sourceWidth <= 0 || sourceHeight <= 0)
@@ -393,13 +588,13 @@ namespace SvgViewer
                 return new Size(previewSize, previewSize);
             }
 
-            var widthRatio = previewSize / sourceWidth;
-            var heightRatio = previewSize / sourceHeight;
-            var ratio = System.Math.Min(widthRatio, heightRatio);
+            double widthRatio = previewSize / sourceWidth;
+            double heightRatio = previewSize / sourceHeight;
+            double ratio = System.Math.Min(widthRatio, heightRatio);
 
             // Ensure minimum size of 1 pixel
-            var destWidth = System.Math.Max(1, (int)(sourceWidth * ratio));
-            var destHeight = System.Math.Max(1, (int)(sourceHeight * ratio));
+            int destWidth = System.Math.Max(1, (int)(sourceWidth * ratio));
+            int destHeight = System.Math.Max(1, (int)(sourceHeight * ratio));
 
             var calculatedSize = new Size(destWidth, destHeight);
 
@@ -417,7 +612,7 @@ namespace SvgViewer
                 return;
             }
 
-            var margin = Options?.PreviewMargin ?? Constants.DefaultPreviewMargin;
+            int margin = Options?.PreviewMargin ?? Constants.DefaultPreviewMargin;
             PreviewPosition position = Options?.PreviewPosition ?? PreviewPosition.BottomRight;
 
             double left, top;

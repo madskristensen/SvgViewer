@@ -17,7 +17,7 @@ namespace SvgViewer
         private CancellationTokenSource _cancellationTokenSource;
         private DispatcherTimer _dispatcherTimer;
         private Action _pendingAction;
-        private bool _disposed;
+        private volatile bool _disposed;
 
         /// <summary>
         /// Creates a new debouncer
@@ -75,28 +75,42 @@ namespace SvgViewer
 
         private void DebounceWithDispatcherCore(Action action, int delay)
         {
-            // Stop existing timer
-            if (_dispatcherTimer != null)
+            // Check disposed state - important for delayed BeginInvoke callbacks
+            if (_disposed)
             {
-                _dispatcherTimer.Stop();
-                _dispatcherTimer.Tick -= OnDispatcherTimerTick;
+                return;
+            }
+
+            // Stop existing timer
+            DispatcherTimer existingTimer = _dispatcherTimer;
+            if (existingTimer != null)
+            {
+                existingTimer.Stop();
+                existingTimer.Tick -= OnDispatcherTimerTick;
                 _dispatcherTimer = null;
             }
 
             _pendingAction = action;
 
             // Create and start new timer
-            _dispatcherTimer = new DispatcherTimer
+            var newTimer = new DispatcherTimer
             {
                 Interval = TimeSpan.FromMilliseconds(delay)
             };
-            _dispatcherTimer.Tick += OnDispatcherTimerTick;
-            _dispatcherTimer.Start();
+            newTimer.Tick += OnDispatcherTimerTick;
+            _dispatcherTimer = newTimer;
+            newTimer.Start();
         }
 
         private void OnDispatcherTimerTick(object sender, EventArgs e)
         {
-            _dispatcherTimer?.Stop();
+            if (_disposed)
+            {
+                return;
+            }
+
+            DispatcherTimer timer = sender as DispatcherTimer;
+            timer?.Stop();
 
             Action action = _pendingAction;
             _pendingAction = null;
@@ -108,6 +122,11 @@ namespace SvgViewer
         {
             lock (_lock)
             {
+                if (_disposed)
+                {
+                    return;
+                }
+
                 // Cancel any existing operation
                 _cancellationTokenSource?.Cancel();
                 _cancellationTokenSource?.Dispose();
@@ -123,8 +142,8 @@ namespace SvgViewer
                     {
                         await Task.Delay(delay, token);
 
-                        // If we weren't cancelled, execute the action
-                        if (!token.IsCancellationRequested)
+                        // Double-check disposed state after delay
+                        if (!token.IsCancellationRequested && !_disposed)
                         {
                             action();
                         }
@@ -144,34 +163,38 @@ namespace SvgViewer
                 return;
             }
 
+            // Mark disposed first to prevent new operations
+            _disposed = true;
+
             lock (_lock)
             {
-                _disposed = true;
                 _cancellationTokenSource?.Cancel();
                 _cancellationTokenSource?.Dispose();
                 _cancellationTokenSource = null;
             }
 
+            // Capture timer reference before nulling to avoid race condition
+            DispatcherTimer timerToDispose = _dispatcherTimer;
+            _dispatcherTimer = null;
+            _pendingAction = null;
+
             // Dispatcher timer cleanup must happen on UI thread
-            if (_dispatcherTimer != null)
+            if (timerToDispose != null)
             {
                 if (_dispatcher?.CheckAccess() == true)
                 {
-                    _dispatcherTimer.Stop();
-                    _dispatcherTimer.Tick -= OnDispatcherTimerTick;
+                    timerToDispose.Stop();
+                    timerToDispose.Tick -= OnDispatcherTimerTick;
                 }
                 else
                 {
                     _dispatcher?.BeginInvoke(new Action(() =>
                     {
-                        _dispatcherTimer?.Stop();
+                        timerToDispose.Stop();
+                        timerToDispose.Tick -= OnDispatcherTimerTick;
                     }));
                 }
-
-                _dispatcherTimer = null;
             }
-
-            _pendingAction = null;
         }
     }
 }
