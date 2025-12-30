@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -90,7 +91,7 @@ namespace SvgViewer
 
         private void OnTextBufferChanged(object sender, EventArgs e)
         {
-            int debounceDelay = Options?.DebounceDelay ?? Constants.DefaultDebounceDelay;
+            var debounceDelay = Options?.DebounceDelay ?? Constants.DefaultDebounceDelay;
 
             _debouncer.Debounce(() =>
             {
@@ -244,8 +245,8 @@ namespace SvgViewer
                 return;
             }
 
-            double zoomedWidth = _currentBitmap.Width * _zoomFactor;
-            double zoomedHeight = _currentBitmap.Height * _zoomFactor;
+            var zoomedWidth = _currentBitmap.Width * _zoomFactor;
+            var zoomedHeight = _currentBitmap.Height * _zoomFactor;
 
             Width = zoomedWidth;
             Height = zoomedHeight;
@@ -262,7 +263,7 @@ namespace SvgViewer
             }
             else if (_currentSvgWidth != null && _currentSvgHeight != null)
             {
-                string zoomInfo = _zoomFactor != 1.0 ? $"\nZoom: {_zoomFactor:P0}" : "";
+                var zoomInfo = _zoomFactor != 1.0 ? $"\nZoom: {_zoomFactor:P0}" : "";
                 ToolTip = $"Width: {_currentSvgWidth}\nHeight: {_currentSvgHeight}{zoomInfo}\n\nClick to copy • Scroll to zoom";
             }
         }
@@ -270,7 +271,7 @@ namespace SvgViewer
         private async Task GenerateImageAsync()
         {
             // Show loading indicator if enabled
-            bool showLoading = Options?.ShowLoadingIndicator ?? true;
+            var showLoading = Options?.ShowLoadingIndicator ?? true;
             if (showLoading && !_isLoading)
             {
                 _isLoading = true;
@@ -292,7 +293,7 @@ namespace SvgViewer
         {
             try
             {
-                string xmlContent = _view.TextBuffer.CurrentSnapshot.GetText();
+                var xmlContent = _view.TextBuffer.CurrentSnapshot.GetText();
 
                 // Quick validation before expensive parsing
                 if (!LooksLikeSvg(xmlContent))
@@ -301,8 +302,8 @@ namespace SvgViewer
                 }
 
                 // Check content hash to avoid re-rendering identical content
-                string contentHash = ComputeHash(xmlContent);
-                int previewSize = Options?.PreviewSize ?? Constants.DefaultPreviewSize;
+                var contentHash = ComputeHash(xmlContent);
+                var previewSize = Options?.PreviewSize ?? Constants.DefaultPreviewSize;
 
                 if (contentHash == _lastContentHash && previewSize == _lastPreviewSize)
                 {
@@ -310,7 +311,7 @@ namespace SvgViewer
                 }
 
                 // Parse XML
-                if (!TryParseXml(xmlContent, out XmlDocument xml, out string parseError))
+                if (!TryParseXml(xmlContent, out XmlDocument xml, out var parseError))
                 {
                     return RenderResult.Error(parseError);
                 }
@@ -334,12 +335,12 @@ namespace SvgViewer
                 // Calculate dimensions
                 Size size = CalculateDimensions(new Size(svg.Width.Value, svg.Height.Value), previewSize);
 
-                // Render to bitmap
+                // Render to bitmap (with timeout protection)
                 BitmapImage bitmap = await RenderToBitmapAsync(svg, size);
 
                 if (bitmap == null)
                 {
-                    return RenderResult.Error("Failed to render SVG");
+                    return RenderResult.Error($"Failed to render SVG (rendering timed out after {Constants.RenderingTimeoutMs / 1000}s or SVG is too complex)");
                 }
 
                 // Update cache
@@ -373,20 +374,41 @@ namespace SvgViewer
                     _reusableStream.SetLength(0);
                 }
 
-                using (System.Drawing.Bitmap bmp = svg.Draw((int)size.Width, (int)size.Height))
+                // Run SVG rendering with a timeout to prevent hangs on complex SVGs
+                using (var cts = new CancellationTokenSource(Constants.RenderingTimeoutMs))
                 {
-                    bmp.Save(_reusableStream, System.Drawing.Imaging.ImageFormat.Png);
-                    _reusableStream.Position = 0;
+                    System.Drawing.Bitmap bmp = await Task.Run(() =>
+                    {
+                        // Check cancellation before starting expensive operation
+                        cts.Token.ThrowIfCancellationRequested();
+                        return svg.Draw((int)size.Width, (int)size.Height);
+                    }, cts.Token);
 
-                    var bitmap = new BitmapImage();
-                    bitmap.BeginInit();
-                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmap.StreamSource = _reusableStream;
-                    bitmap.EndInit();
-                    bitmap.Freeze();
+                    if (bmp == null)
+                    {
+                        return null;
+                    }
 
-                    return bitmap;
+                    using (bmp)
+                    {
+                        bmp.Save(_reusableStream, System.Drawing.Imaging.ImageFormat.Png);
+                        _reusableStream.Position = 0;
+
+                        var bitmap = new BitmapImage();
+                        bitmap.BeginInit();
+                        bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                        bitmap.StreamSource = _reusableStream;
+                        bitmap.EndInit();
+                        bitmap.Freeze();
+
+                        return bitmap;
+                    }
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                // Rendering timed out - return null to show error state
+                return null;
             }
             catch
             {
@@ -419,7 +441,7 @@ namespace SvgViewer
                     _currentSvgWidth = null;
                     _currentSvgHeight = null;
 
-                    bool showError = Options?.ShowErrorIndicator ?? true;
+                    var showError = Options?.ShowErrorIndicator ?? true;
                     if (showError)
                     {
                         ShowErrorState(result.ErrorMessage);
@@ -476,7 +498,7 @@ namespace SvgViewer
 
         private static BitmapSource CreateErrorIndicatorBitmap()
         {
-            int size = 48;
+            var size = 48;
             var visual = new DrawingVisual();
 
             using (DrawingContext context = visual.RenderOpen())
@@ -518,7 +540,7 @@ namespace SvgViewer
             }
 
             // Find first non-whitespace character position
-            int start = 0;
+            var start = 0;
             while (start < content.Length && char.IsWhiteSpace(content[start]))
             {
                 start++;
@@ -564,7 +586,7 @@ namespace SvgViewer
         {
             // Use simple hash for change detection (not security)
             // Combine hash code with length for better collision resistance
-            int hash = content.GetHashCode();
+            var hash = content.GetHashCode();
             return $"{hash:X8}-{content.Length}";
         }
 
@@ -579,8 +601,8 @@ namespace SvgViewer
                 return _lastCalculatedSize.Value;
             }
 
-            double sourceWidth = currentSize.Width;
-            double sourceHeight = currentSize.Height;
+            var sourceWidth = currentSize.Width;
+            var sourceHeight = currentSize.Height;
 
             // Handle edge cases
             if (sourceWidth <= 0 || sourceHeight <= 0)
@@ -588,13 +610,13 @@ namespace SvgViewer
                 return new Size(previewSize, previewSize);
             }
 
-            double widthRatio = previewSize / sourceWidth;
-            double heightRatio = previewSize / sourceHeight;
-            double ratio = System.Math.Min(widthRatio, heightRatio);
+            var widthRatio = previewSize / sourceWidth;
+            var heightRatio = previewSize / sourceHeight;
+            var ratio = System.Math.Min(widthRatio, heightRatio);
 
             // Ensure minimum size of 1 pixel
-            int destWidth = System.Math.Max(1, (int)(sourceWidth * ratio));
-            int destHeight = System.Math.Max(1, (int)(sourceHeight * ratio));
+            var destWidth = System.Math.Max(1, (int)(sourceWidth * ratio));
+            var destHeight = System.Math.Max(1, (int)(sourceHeight * ratio));
 
             var calculatedSize = new Size(destWidth, destHeight);
 
@@ -612,7 +634,7 @@ namespace SvgViewer
                 return;
             }
 
-            int margin = Options?.PreviewMargin ?? Constants.DefaultPreviewMargin;
+            var margin = Options?.PreviewMargin ?? Constants.DefaultPreviewMargin;
             PreviewPosition position = Options?.PreviewPosition ?? PreviewPosition.BottomRight;
 
             double left, top;

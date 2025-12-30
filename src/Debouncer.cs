@@ -109,7 +109,7 @@ namespace SvgViewer
                 return;
             }
 
-            DispatcherTimer timer = sender as DispatcherTimer;
+            var timer = sender as DispatcherTimer;
             timer?.Stop();
 
             Action action = _pendingAction;

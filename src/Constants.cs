@@ -21,6 +21,9 @@ namespace SvgViewer
         public const int MinDebounceDelay = 100;
         public const int MaxDebounceDelay = 2000;
 
+        // Rendering timeout (milliseconds)
+        public const int RenderingTimeoutMs = 5000; // 5 seconds max for SVG rendering
+
         // Memory stream buffer sizes
         public const int InitialMemoryStreamCapacity = 65536; // 64KB initial size for bitmap encoding
     }

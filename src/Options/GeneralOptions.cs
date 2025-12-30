@@ -33,7 +33,7 @@ namespace SvgViewer
             get => _previewSize;
             set
             {
-                int newValue = MathHelper.Clamp(value, 50, 1000);
+                var newValue = MathHelper.Clamp(value, 50, 1000);
                 if (_previewSize != newValue)
                 {
                     _previewSize = newValue;
@@ -68,7 +68,7 @@ namespace SvgViewer
             get => _previewMargin;
             set
             {
-                int newValue = MathHelper.Clamp(value, 0, 100);
+                var newValue = MathHelper.Clamp(value, 0, 100);
                 if (_previewMargin != newValue)
                 {
                     _previewMargin = newValue;
@@ -120,7 +120,7 @@ namespace SvgViewer
             get => _debounceDelay;
             set
             {
-                int newValue = MathHelper.Clamp(value, 100, 2000);
+                var newValue = MathHelper.Clamp(value, 100, 2000);
                 if (_debounceDelay != newValue)
                 {
                     _debounceDelay = newValue;
