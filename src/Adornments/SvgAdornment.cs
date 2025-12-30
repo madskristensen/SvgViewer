@@ -332,8 +332,13 @@ namespace SvgViewer
                     return RenderResult.Error("Unable to parse SVG document");
                 }
 
-                // Calculate dimensions
-                Size size = CalculateDimensions(new Size(svg.Width.Value, svg.Height.Value), previewSize);
+                // Get SVG dimensions (from width/height attributes or viewBox)
+                Size svgSize = GetSvgDimensions(svg);
+                var displayWidth = FormatSvgDimension(svg.Width, svgSize.Width);
+                var displayHeight = FormatSvgDimension(svg.Height, svgSize.Height);
+
+                // Calculate render dimensions
+                Size size = CalculateDimensions(svgSize, previewSize);
 
                 // Render to bitmap (with timeout protection)
                 BitmapImage bitmap = await RenderToBitmapAsync(svg, size);
@@ -347,7 +352,7 @@ namespace SvgViewer
                 _lastContentHash = contentHash;
                 _lastPreviewSize = previewSize;
 
-                return RenderResult.Success(bitmap, svg.Width.ToString(), svg.Height.ToString());
+                return RenderResult.Success(bitmap, displayWidth, displayHeight);
             }
             catch (OperationCanceledException)
             {
@@ -530,6 +535,68 @@ namespace SvgViewer
             bitmap.Freeze();
 
             return bitmap;
+        }
+
+        /// <summary>
+        /// Gets the dimensions of an SVG, falling back to viewBox if width/height are not specified
+        /// </summary>
+        private static Size GetSvgDimensions(SvgDocument svg)
+        {
+            const double defaultSize = 300; // Default size when no dimensions are specified
+
+            double width = 0;
+            double height = 0;
+
+            // Try to get explicit width/height first
+            if (svg.Width.Type != Svg.SvgUnitType.None && svg.Width.Type != Svg.SvgUnitType.Percentage)
+            {
+                width = svg.Width.Value;
+            }
+
+            if (svg.Height.Type != Svg.SvgUnitType.None && svg.Height.Type != Svg.SvgUnitType.Percentage)
+            {
+                height = svg.Height.Value;
+            }
+
+            // If width or height is missing/invalid, try to get from viewBox
+            if ((width <= 0 || height <= 0) && svg.ViewBox != Svg.SvgViewBox.Empty)
+            {
+                if (width <= 0)
+                {
+                    width = svg.ViewBox.Width;
+                }
+
+                if (height <= 0)
+                {
+                    height = svg.ViewBox.Height;
+                }
+            }
+
+            // If still no valid dimensions, use default
+            if (width <= 0)
+            {
+                width = defaultSize;
+            }
+
+            if (height <= 0)
+            {
+                height = defaultSize;
+            }
+
+            return new Size(width, height);
+        }
+
+        /// <summary>
+        /// Formats an SVG dimension for display, showing the original value or computed value
+        /// </summary>
+        private static string FormatSvgDimension(Svg.SvgUnit unit, double computedValue)
+        {
+            if (unit.Type == Svg.SvgUnitType.None || unit.Type == Svg.SvgUnitType.Percentage || unit.Value <= 0)
+            {
+                return $"{computedValue:0}px (from viewBox)";
+            }
+
+            return unit.ToString();
         }
 
         private static bool LooksLikeSvg(string content)
