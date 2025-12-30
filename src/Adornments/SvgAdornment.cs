@@ -10,6 +10,7 @@ using System.Windows.Media.Imaging;
 using System.Xml;
 
 using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Text.Editor;
 using Microsoft.VisualStudio.Threading;
 
@@ -191,6 +192,9 @@ namespace SvgViewer
                             UpdateTooltip();
                         }).FireAndForget();
                     });
+
+                    // Show status bar message
+                    SetStatusBarTextAsync("SVG preview image copied to clipboard").FireAndForget();
                 }
                 catch
                 {
@@ -268,9 +272,19 @@ namespace SvgViewer
             }
         }
 
+        private static async Task SetStatusBarTextAsync(string text)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            if (ServiceProvider.GlobalProvider.GetService(typeof(SVsStatusbar)) is IVsStatusbar statusBar)
+            {
+                statusBar.SetText(text);
+            }
+        }
+
         private async Task GenerateImageAsync()
         {
-            // Show loading indicator if enabled
+            // Show loading indicator if enabled (requires UI thread)
             var showLoading = Options?.ShowLoadingIndicator ?? true;
             if (showLoading && !_isLoading)
             {
@@ -279,6 +293,7 @@ namespace SvgViewer
                 ShowLoadingState();
             }
 
+            // Switch to background thread for all heavy work
             await TaskScheduler.Default;
 
             RenderResult result = await RenderSvgAsync();
@@ -289,6 +304,10 @@ namespace SvgViewer
             ApplyRenderResult(result);
         }
 
+        /// <summary>
+        /// Renders the SVG content to a bitmap. This method runs entirely on a background thread.
+        /// Heavy operations: XML parsing, SVG parsing, bitmap rendering, PNG encoding.
+        /// </summary>
         private async Task<RenderResult> RenderSvgAsync()
         {
             try
