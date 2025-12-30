@@ -47,7 +47,11 @@
   <ItemGroup>
     <Compile Include="Adornments\AdornmentLayer.cs" />
     <Compile Include="Adornments\SvgCreationListener.cs" />
+    <Compile Include="Constants.cs" />
     <Compile Include="Debouncer.cs" />
+    <Compile Include="Options\GeneralOptions.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="source.extension.cs">
       <AutoGen>True</AutoGen>
