@@ -1,6 +1,7 @@
 # SVG Viewer
 
 [![Build](https://github.com/madskristensen/SvgViewer/actions/workflows/build.yaml/badge.svg)](https://github.com/madskristensen/SvgViewer/actions/workflows/build.yaml)
+![GitHub Sponsors](https://img.shields.io/github/sponsors/madskristensen)
 
 Download the extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=MadsKristensen.SvgViewer) or get the latest [CI build](http://vsixgallery.com/extension/SvgViewer.7a08d0d4-985c-4415-93d5-ddd9135d8f4f/)
 
@@ -19,6 +20,7 @@ Renders a live preview of the SVG file being edited, positioned in a corner of t
 The preview updates automatically as you type, providing instant visual feedback on your changes.
 
 **Interactive features:**
+
 - 🖱️ **Click to copy** – Click on the preview to copy the rendered image to your clipboard
 - 🔍 **Scroll to zoom** – Use the mouse wheel over the preview to zoom in/out (50% to 400%)
 - 📍 **Hover for info** – Tooltip shows SVG dimensions, zoom level, and usage hints
