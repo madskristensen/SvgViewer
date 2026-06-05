@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -329,6 +331,10 @@ namespace SvgViewer
                     return RenderResult.Unchanged();
                 }
 
+                // The SVG library doesn't understand CSS custom properties (e.g. var(--color, #fff)),
+                // so resolve them to their defined values or fallbacks before parsing.
+                xmlContent = ResolveCssVariables(xmlContent);
+
                 // Parse XML
                 if (!TryParseXml(xmlContent, out XmlDocument xml, out var parseError))
                 {
@@ -640,6 +646,78 @@ namespace SvgViewer
 
             // Check for <svg or <?xml (which may contain svg)
             return content.IndexOf("<svg", start, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        // Matches an innermost CSS var() expression, e.g. var(--name) or var(--name, fallback).
+        // The fallback cannot contain parentheses, so the innermost expression is always matched first.
+        private static readonly Regex _cssVarRegex = new Regex(
+            @"var\(\s*(--[\w-]+)\s*(?:,\s*([^()]*?))?\s*\)",
+            RegexOptions.Compiled);
+
+        // Matches CSS custom property definitions, e.g. --name: value;
+        private static readonly Regex _cssVarDefinitionRegex = new Regex(
+            @"(--[\w-]+)\s*:\s*([^;}<]+)",
+            RegexOptions.Compiled);
+
+        /// <summary>
+        /// Resolves CSS custom properties (var() expressions) to concrete values so the SVG
+        /// library, which doesn't support them, can render the content. Variables are resolved
+        /// using definitions found in the document, falling back to the value provided inside var().
+        /// </summary>
+        private static string ResolveCssVariables(string content)
+        {
+            if (content.IndexOf("var(", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return content;
+            }
+
+            Dictionary<string, string> definitions = CollectVariableDefinitions(content);
+
+            // Resolve repeatedly so nested expressions like var(--a, var(--b, #fff)) collapse fully.
+            // The loop is bounded to avoid infinite recursion from circular definitions.
+            for (var i = 0; i < 20 && content.IndexOf("var(", StringComparison.OrdinalIgnoreCase) >= 0; i++)
+            {
+                var replaced = _cssVarRegex.Replace(content, match =>
+                {
+                    var name = match.Groups[1].Value;
+                    var fallback = match.Groups[2].Success ? match.Groups[2].Value.Trim() : string.Empty;
+
+                    if (definitions.TryGetValue(name, out var value) && value.IndexOf("var(", StringComparison.OrdinalIgnoreCase) < 0)
+                    {
+                        return value;
+                    }
+
+                    return fallback;
+                });
+
+                if (replaced == content)
+                {
+                    break;
+                }
+
+                content = replaced;
+            }
+
+            return content;
+        }
+
+        private static Dictionary<string, string> CollectVariableDefinitions(string content)
+        {
+            var definitions = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            foreach (Match match in _cssVarDefinitionRegex.Matches(content))
+            {
+                var name = match.Groups[1].Value;
+                var value = match.Groups[2].Value.Trim();
+
+                // Skip a definition that points back to a var() so the fallback is used instead.
+                if (!definitions.ContainsKey(name) && value.IndexOf("var(", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    definitions[name] = value;
+                }
+            }
+
+            return definitions;
         }
 
         private static bool TryParseXml(string content, out XmlDocument document, out string error)
